@@ -1,0 +1,29 @@
+digger () 
+{ 
+    echo;
+    var="$1$2$3$4$5";
+    var="${var,,}";
+    var1=$(echo ${var}|sed -e "s/\(\[\|\]\|\/\|h\(tt\|xx\)p\(s\)\?\(:\/\/\)\?\)//g");
+    printf '%s\n\n' "DNS for Domain ${var1}";
+    if [[ -n $(dig DS ${var1} +short) ]]; then
+        echo -e "DNSSEC enabled\n";
+        resolver="";
+    else
+        resolver="@208.67.222.222";
+    fi;
+    for type in SOA NS A MX TXT;
+    do
+        echo " --${type}:";
+        dig ${resolver} +short ${type} ${var1};
+        if [[ ${type} =~ MX|NS ]]; then
+            echo;
+            for mx in $(dig ${resolver} +short ${type} ${var1}|awk '{sub(/\.$/,"",$0);print $NF}');
+            do
+                echo -n "${mx}: ";
+                dig ${resolver} +short ${mx};
+            done;
+        fi;
+        echo;
+    done;
+    unset mx type
+}
