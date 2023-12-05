@@ -1,4 +1,4 @@
-  echo;
+    echo;
     var="$1$2$3$4$5";
     var="${var,,}";
     var1=$(echo ${var}|sed -e 's|^[^/]*//||' -e 's|/.*$||');
@@ -24,22 +24,22 @@
         echo;
     done;
 
-echo -e "Checking service subdomain routing\n" ;
+  echo -e "Checking service subdomain routing\n" ;
 
-for ssd in www mail cpanel webmail webdisk cpcontacts cpcalendars whm;
-do
-echo -e " --${ssd}.${var1}"
-dig ${resolver} a ${ssd}.${var1} +short ;
-done;
+  for ssd in www mail cpanel webmail webdisk cpcontacts cpcalendars whm;
+    do
+      echo -e " --${ssd}.${var1}" ;
+      dig ${resolver} a ${ssd}.${var1} +short ;
+    done;
 
 
-        unset resolver
-echo -e "\nChecking if nameservers report A records"
-        nameservers=($(dig ${var1} ns +short))
-        for ns in ${nameservers[@]}
-do
-response1=$(dig @${ns} ${var1} a +short)
-echo -e "A record according to ${ns} ${response1:-No Response from nameserver}"
-unset response1
-done
+  unset resolver;
+  echo -e "\nChecking if nameservers report A records";
+  nameservers=($(dig ${var1} ns +short));
+  for ns in ${nameservers[@]};
+  do
+    response1=$(dig @${ns} ${var1} a +short)
+    echo -e "A record according to ${ns} ${response1:-No Response from nameserver}"
+    unset response1
+  done
     unset mx type
