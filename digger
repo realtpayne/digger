@@ -32,9 +32,10 @@
       dig ${resolver} a ${ssd}.${var1} +short ;
     done;
 
-
   unset resolver;
-  echo -e "\nChecking if nameservers report A records";
+
+  echo -e "\nChecking if nameservers report A records for ${var1}";
+
   nameservers=($(dig ${var1} ns +short));
   for ns in ${nameservers[@]};
   do
