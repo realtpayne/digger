@@ -1,46 +1,155 @@
-    echo;
-    var="$1$2$3$4$5";
-    var="${var,,}";
-    var1=$(echo ${var}|sed -e 's|^[^/]*//||' -e 's|/.*$||');
-    printf '%s\n\n' "DNS for Domain ${var1}";
-    if [[ -n $(dig DS ${var1} +short) ]]; then
-        echo -e "DNSSEC enabled\n";
-        resolver="";
-    else
-        resolver="@208.67.222.222";
-    fi;
-         for type in SOA NS A AAAA MX TXT;
-    do
-        echo " --${type}:";
-        dig ${resolver} +short ${type} ${var1};
-        if [[ ${type} =~ MX|NS ]]; then
-            echo;
-            for mx in $(dig ${resolver} +short ${type} ${var1}|awk '{sub(/\.$/,"",$0);print $NF}');
-            do
-                echo -n "${mx}: ";
-                dig ${resolver} +short ${mx};
-            done;
-        fi;
-        echo;
-    done;
+#!/bin/bash
+# Digger by Tpayne | github.com/realtpayne/digger
 
-  echo -e "Checking service subdomain routing\n" ;
+#This script was originally created to quickly verify the DNS of domains reported for abuse, as these reports would come in many formats I wanted something that could retrieve the domain from whatever was provided even when extra data (https / the URI) or erroneous spaces were included.
 
-  for ssd in www mail cpanel webmail webdisk cpcontacts cpcalendars whm;
-    do
-      echo -e " --${ssd}.${var1}" ;
-      dig ${resolver} a ${ssd}.${var1} +short ;
-    done;
+#colors
+RED='\033[0;31m'
+NC='\033[0m'
+GREEN='\033[1;32m'
 
-  unset resolver;
 
-  echo -e "\nChecking if nameservers report A records for ${var1}";
+mainstart(){
+	if [ "$#" -eq 0 ] ; then
+		usage ;
+	else
+		for var in "$@" ;
+		do if [[ ${var} == -h || ${var} == --help ]] ; then
+			usage ;
+		elif [[ ${var} == -s ||  ${var} == --subdomain ]] ; then
+			subdomainflag=1 ;
+		elif [[ ${var} == -l || ${var} == --sslcheck ]] ; then
+			if type nc > /dev/null 2>&1 ; then
+				sslcheckflag=1
+			else
+				sslcheckskipped=1
+			fi
 
-  nameservers=($(dig ${var1} ns +short));
-  for ns in ${nameservers[@]};
-  do
-    response1=$(dig @${ns} ${var1} a +short)
-    echo -e "A record according to ${ns} ${response1:-No Response from nameserver}"
-    unset response1
-  done
-    unset mx type
+		else
+			filteredlist+=($var) ;
+		fi
+		done
+	fi	
+}
+
+usage(){
+>&2 cat << EOF
+Usage: $0 [OPTIONS] <domain>
+Accepted input formats to demonstate the pattern matching available in the tool:
+$0 -h https://domain.tld/uri
+$0 domain.tld
+$0 https : / / domain.tld/uri --help
+Available options:
+	[ -h | --help] | This output here
+	[ -s | --subdomain ] | Pull the SOA from the DNS lookup and compares the subdomains DNS at the authortative zone
+	[ -l | --sslcheck ] | Validate if port 80 and 53 is open and accepting requests, requires nc be installed
+EOF
+exit 1
+}
+
+noservers(){
+	echo -e "\nThe nameserver $1 responded with ${RED}no servers could be reached${NC} when asked about $2"
+	echo -e "\nThis can be verified by you by running the dig below\n${RED}\tdig @$1 $2 a +short${NC}"
+}
+
+portcheck(){
+for ip in "$@" ; 
+do 
+	nc -w 5 -vz ${ip} 80 >/dev/null 2>&1 && echo -e "${GREEN}TCP port 80 is open on ${ip}${NC}" || echo -e "${RED}unable to detect TCP Port 80 is open on ${ip}${NC}";
+	nc -w 5 -vz ${ip} 53 >/dev/null 2>&1 && echo -e "${GREEN}TCP port 53 is open on ${ip}${NC}" || echo -e "${RED}unable to detect TCP Port 53 is open on ${ip}${NC}";
+	nc -w 5 -vz -u ${ip} 53 >/dev/null 2>&1 && echo -e "${GREEN}UDP port 53 is open on ${ip}${NC}" || echo -e "${RED}unable to detect UDP Port 53 is open on ${ip}${NC}";
+done
+}
+
+
+lookup(){
+	    var="$@"; # sets var as everything passed from mainstart
+	    var="${var,,}"; # lower cases the above
+	    var=${var// /} # removes spaces from the above
+	    var1=$(echo ${var}|sed -e 's|^[^/]*//||' -e 's|/.*$||'); # if provided in https://domain.tld/path/to/uri , formats out only the domain.tld
+	    var2=$(echo -e ${var1} | cut -d. -f2-) # the previous domain level, needed for subdomain lookup
+	    printf '%s\n\n' "DNS for Domain ${var1}";
+	    if [[ -n $(dig DS ${var1} +short) ]]; then
+		    echo -e "DNSSEC enabled\n";
+		    resolver="";
+	    else
+		    resolver="@208.67.222.222";
+	    fi;
+	    for type in SOA NS A AAAA MX TXT;
+	    do
+		    echo " --${type}:";
+		    if [[ ${type} =~ NS && ${#subdomainflag[@]} -eq 1 ]]; then
+			echo -e "${GREEN}Subdomain specified, using parent domain '${var2}' nameservers${NC}";
+			dig ${resolver} +short ${type} $(echo ${var1} | cut -d. -f2-);
+			echo;
+			for mx in $(dig ${resolver} +short ${type} $(echo ${var1} | cut -d. -f2-)| awk '{sub(/\.$/,"",$0);print $NF}'); 
+			do
+				echo -n "${mx}: ";
+				dig ${resolver} +short ${mx}
+			done;
+			else  
+			dig ${resolver} +short ${type} ${var1};
+			if [[ ${type} =~ MX|NS ]]; then
+			    echo;
+			    for mx in $(dig ${resolver} +short ${type} ${var1}|awk '{sub(/\.$/,"",$0);print $NF}');
+			    do
+				    echo -n "${mx}: ";
+				    dig ${resolver} +short ${mx};
+			    done;
+		    fi;
+		    echo;
+		    fi;
+	    done;
+		    
+	    echo -e "Checking service subdomain routing\n" ;
+	    for subdomain in www mail cpanel webmail webdisk cpcontacts cpcalendars whm;
+	    do
+		    echo -e "-- ${subdomain}.${var1}" ;
+		    dig ${resolver} a ${subdomain}.${var1} +short ;
+	    done;
+	    unset resolver;
+	    echo -e "\nChecking if nameservers report A records for ${var1}\n";
+	    
+	    if [[ ${#subdomainflag[@]} -eq 1 ]]; then
+		    echo
+		    echo -e "${GREEN}Subdomain specified, using parent domain '${var2}' nameservers${NC}";
+		    echo
+		    nameservers=($(dig ${var2} ns +short));
+	    else
+		    nameservers=($(dig ${var1} ns +short));
+	    fi 
+		    for ns in ${nameservers[@]};
+		    do
+			    response=($(dig @${ns} ${var1} a +short))
+			    if [ ${#response[@]} -eq 0 ] ; then
+				    echo -e "${RED}${ns} responded with no record for ${var1}${NC}"
+			   elif [[ "${response[*]}" =~ "no servers could be reached" ]] ; then
+				   noservers ${ns} ${var1}
+			   elif [[ -n $(dig @${ns} ${var1} cname +short) ]]; then
+				   echo -e "${ns} returned the cname record ${response[*]} for ${var1} performing second lookup";
+				   dig $(dig @${ns} ${var1} cname +short) a +short;
+			   else 
+				   echo -e "${ns} returned the following record(s) for ${var1} : ${response[*]}";  
+				   unset response
+			    fi
+		    done
+
+		if [[ ${#sslcheckflag[@]} -eq 1 ]] ; then
+			echo -e "\nPortchecking starts now, if the script hangs here theres likely a network problem\n"
+		fi
+
+		if [[ ${#sslcheckflag[@]} -eq 1 && ${#subdomainflag[@]} -eq 1 && ${#sslcheckskipped[@]} -ne 1 ]] ; then
+			portcheck $(dig ${var2} +short)
+		elif [[ ${#sslcheckflag[@]} -eq 1 && ${#sslcheckskipped[@]} -ne 1 ]] ; then
+			portcheck $(dig ${var1} +short)
+		elif [[ ${#sslcheckskipped[@]} -eq 1 ]] ; then
+			echo -e "${RED}executable for NC not found, so the SSL check is skipped${NC}"
+		fi	
+		
+		unset mx type
+}
+
+mainstart $@
+if [ ${#filteredlist[@]} -gt 0 ] ; then
+	lookup ${filteredlist[@]} ;
+fi
