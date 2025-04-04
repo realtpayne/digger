@@ -64,7 +64,7 @@ done
 
 lookup(){
 	    var="$@"; # sets var as everything passed from mainstart
-	    var="${var,,}"; # lower cases the above
+	    var="$(echo ${var} | tr ':UPPER:' ':LOWER:')"; # lower cases the above variable
 	    var=${var// /} # removes spaces from the above
 	    var1=$(echo ${var}|sed -e 's|^[^/]*//||' -e 's|/.*$||'); # if provided in https://domain.tld/path/to/uri , formats out only the domain.tld
 	    var2=$(echo -e ${var1} | cut -d. -f2-) # the previous domain level, needed for subdomain lookup
