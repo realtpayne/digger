@@ -25,6 +25,8 @@ mainstart(){
 				sslcheckskipped=1
 			fi
 
+		elif [[ ${var} == "-d" || ${var} == "--dmarclookup" ]] ; then
+			verbosedmarclookup=1
 		else
 			filteredlist+=($var) ;
 		fi
@@ -108,8 +110,11 @@ lookup(){
 		    dig ${resolver} a ${subdomain}.${var1} +short ;
 	    done;
 	    unset resolver;
-	    echo -e "\nChecking if nameservers report A records for ${var1}\n";
+	    echo -e "\nChecking Dmarc record now\n"
+	    dmarclookup ${var1}
 	    
+	    echo -e "\nChecking if nameservers report A records for ${var1}\n";
+
 	    if [[ ${#subdomainflag[@]} -eq 1 ]]; then
 		    echo
 		    echo -e "${GREEN}Subdomain specified, using parent domain '${var2}' nameservers${NC}";
@@ -147,6 +152,119 @@ lookup(){
 		fi	
 		
 		unset mx type
+}
+
+dmarclookup(){
+IFS=';' # I need this to help parse dmarc with minimal logic
+dmarc_output=$(dig txt _dmarc.$1 +short)
+for rule in ${dmarc_output[@]}
+do list+=$(echo ${rule} | tr -d '"' )
+done
+unset IFS # I no longer need it and now it causes issues
+for tag in ${list[@]}
+do
+	if [[ ${tag} =~ "p=" && ! ${tag} =~ "sp=" ]] ; then
+		dmarcpolicy=1 && verbosep=${tag}	;
+	elif [[ ${tag} =~ 'v=' ]] ; then
+	        dmarcversion=1 && verboseversion=${tag}
+       elif [[ ${tag} =~ "sp=" ]] ; then
+	       dmarcsubpolicy=1 && verbosesubpolicy=${tag};
+       elif [[ ${tag} =~ "rf=" ]] ; then
+	       forensicreport=1 && verboseforensic=${tag};
+       elif [[ ${tag} =~ "pct=" ]] ; then
+	       percentagepolicy=1 && verbosepercentage=${tag}  ;
+       elif [[ ${tag} =~ "ri=" ]] ; then
+	       reportinginterval=1 && verbosereporting=${tag} ;
+       elif [[ ${tag} =~ "fo=" ]] ; then
+	       failureoption=1 && verbosefailure=${tag};
+       elif [[ ${tag} =~ "rua=" ]] ; then
+	       ruaset=1 && verboserua=${tag};
+       elif [[ ${tag} =~ "ruf=" ]] ; then
+	       rufset=1 && verboseruf=${tag};
+       elif [[ ${tag} =~ "adkim=" ]] ; then
+	       verboseADKIM=${tag};
+       elif [[ ${tag} =~ "aspf=" ]] ; then
+	       verboseASPF=${tag};
+	fi
+done
+
+if [[ ${#dmarcversion[@]} -eq "1" && ${#dmarcpolicy[@]} -eq "1" && ${#verbosedmarclookup[@]} -ne 1 ]] ; then
+	echo "Dmarc for domain is syntactically valid. Full record below" ;
+	echo -e "${dmarc_output[*]}";
+elif [[ ${#verbosedmarclookup[@]} -eq "1" ]] ; then
+	if [[ ${#dmarcversion[@]} -eq "1" && ${#dmarcpolicy[@]} -eq "1" ]] ; then
+		echo "Dmarc is valid, I found a policy and a version. Full record below"
+		echo -e "Dmarc -- ${dmarc_output[*]}";	
+		echo "Dmarc verbose lookup was passed so I will explain what I found below";
+		echo "Dmarc Policy: ${verbosep}"
+		echo -e "\tOptions available are 'None', 'Quarantine', 'Reject'."
+		echo "Dmarc Version: ${verboseversion}"
+	elif [[ ${#dmarcversion[@]} -ne "1" || ${#dmarcpolicy[@]} -ne "1" ]] ; then
+		if [[ ${#dmarcversion[@]} -ne "1" ]] ; then
+			echo "Dmarc Version tag not present, this is a required option."
+		fi
+		if [[ ${#dmarcpolicy[@]} -ne "1" ]] ; then
+			echo "Dmarc Policy tag not present, this is a required option."
+		fi
+	fi
+	if [[ ${#verbosesubpolicy[@]} -eq "1" ]] ; then
+		echo "Dmarc Subdomain Policy: ${verbosesubpolicy}" ;
+		echo -e "\tThis optional policy instructs specific policy handling for subdomains." 
+	fi
+	if [[ ${#verboseforensic[@]} -eq "1" ]] ; then
+		echo "Dmarc Report Format: ${verboseforensic}";
+		echo -e "\tThis is an optional dmarc policy which sets the format of Foresic reports.";
+		echo -e '\tThis AFRF format (Authentication Failure Reporting Format) is the only supported option for this.';
+	fi
+	if [[ ${#verbosepercentage[@]} -eq "1" ]] ; then
+		echo "Dmarc Percentage Policy: ${verbosepercentage}" ;
+		echo -e "\tThis optional policy specifies the percentage of email messages subjected to Dmarc filtering." 
+		echo -e "\tFor example, pct=25 means that a quarter of the emails will be filtered by the recipient."
+	fi
+	if [[ ${#verbosereporting[@]} -eq "1" ]] ; then
+		echo "Dmarc Report Interval: ${verbosereporting}";
+		echo -e "\tThis optional policy will instruct the interval in seconds between when Aggregate reports can be sent."
+	fi
+	if [[ ${#verboseADKIM} -eq "1"  ]] ; then
+		echo "Dmarc Alignment for DKIM set: ${verboseADKIM}"
+		echo -e "\tThis accepts Relaxed and strict alignements, -r for relaxed | -s for strict"
+		echo -e "\tPass / Fail Scenarios in Strict DKIM Alignment"
+		echo -e "\tDKIM Domain is mail.example.com, Header From Domain is mail.example.com, Result is passed"
+		echo -e "\tDKIM Domain is mail.example.com, Header From Domain is example.com, Result is failed\n"
+		echo -e "\tPass / Fail Scenarios in Relaxed Alignment"
+		echo -e "\tDKIM Domain is mail.example.com, Header From Domain is example.com, Result is Pass"
+		echo -e "\tDKIM Domain is example.mail.com, Header From Domain is example.com, Result is Failed"
+	fi
+	if [[ ${#verboseASPF[@]} -eq "1" ]] ; then 
+		echo "Dmarc alignment for SPf set: ${verboseASPF}"
+		echo -e "\tThis accepts Relaxed and strict alignements. -r for relaxed | -s for strict"
+		echo -e "\tPass / Fail Scenarios in Strict SPF Alignment"
+		echo -e "\tMailFROM Domain is mail.example.com, Header From Domain is mail.example.com, Result is Pass"
+		echo -e "\tMailFROM Domain is mail.example.com, Header From Domain is example.com, Result is Fail"
+		echo -e "\tPass / Fail Scenarios in Relaxed SPF Alignment"
+		echo -e "\tMailFROM Domain is mail.example.com, Header From Domain is example.com, Result is Pass"
+		echo -e "\tMailFROM Domain is example.mail.com, Header From Domain is example.com, Result is Fail"
+
+	fi 
+	if [[ ${#verbosefailure[@]} -eq "1" ]] ; then
+		echo "Dmarc Failure Reporting: ${verbosefailure}";
+		echo -e "\tThis optional policy sets the failure reporting options, the following options are available."
+		echo -e "\tfo=0 - only generates a report if both SPF and DKIM fail to validate."
+		echo -e "\tfo=1 - will generate a report if SPF or DKIM fail to validate."
+		echo -e "\tfo=s - Generates an SPF failure report if SPF checks fail, regardless of alignment in aspf policy."
+		echo -e "\tfo=d - Generates an DKIM failure report if DKIM fails, regardless of alignment in adkim policy."
+		echo -e "\tfo=0:s:d is an example of multiple types of reports, this example indicates the rulesets from 0, s, and d are all enforced."
+	fi
+	if [[ ${#ruaset[@]} -eq "1" ]] ; then
+		echo "Dmarc RUA Policy: ${verboserua}"
+		echo -e "\tThis will be the address that aggregate feedback reports are sent to."
+	fi
+	if [[ ${#rufset[@]} -eq "1" ]] ; then
+		echo "Dmarc RUF Policy: ${verboseruf}"
+		echo -e "\tThis will be the address that Forensic reports are sent to.";
+	fi
+
+fi
 }
 
 mainstart $@
