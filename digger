@@ -157,10 +157,7 @@ lookup(){
 dmarclookup(){
 IFS=';' # I need this to help parse dmarc with minimal logic
 dmarc_output=$(dig txt _dmarc.$1 +short)
-for rule in ${dmarc_output[@]}
-do list+=$(echo ${rule} | tr -d '"' )
-done
-unset IFS # I no longer need it and now it causes issues
+read -r -a list <<< "$(echo ${dmarc_output} | tr -d '"')"
 for tag in ${list[@]}
 do
 	if [[ ${tag} =~ "p=" && ! ${tag} =~ "sp=" ]] ; then
@@ -265,6 +262,7 @@ elif [[ ${#verbosedmarclookup[@]} -eq "1" ]] ; then
 	fi
 
 fi
+unset IFS # I no longer need it and now it causes issues
 }
 
 mainstart $@
